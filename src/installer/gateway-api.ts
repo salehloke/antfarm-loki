@@ -130,7 +130,9 @@ export async function createAgentCronJob(job: {
     const args = ["cron", "add", "--json", "--name", job.name];
 
     if (job.schedule.kind === "every" && job.schedule.everyMs) {
-      args.push("--every", `${job.schedule.everyMs}ms`);
+      // Convert ms to duration format (e.g., 300000ms -> "5m")
+      const minutes = Math.round(job.schedule.everyMs / 60000);
+      args.push("--every", `${minutes}m`);
     }
 
     args.push("--session", job.sessionTarget === "isolated" ? "isolated" : "main");
@@ -144,7 +146,7 @@ export async function createAgentCronJob(job: {
     }
 
     if (job.payload?.timeoutSeconds) {
-      args.push("--timeout", `${job.payload.timeoutSeconds}`);
+      args.push("--timeout-seconds", `${job.payload.timeoutSeconds}`);
     }
 
     if (job.payload?.model) {
@@ -152,7 +154,7 @@ export async function createAgentCronJob(job: {
     }
 
     if (job.delivery?.mode === "none") {
-      args.push("--delivery", "none");
+      args.push("--no-deliver");
     }
 
     if (!job.enabled) {

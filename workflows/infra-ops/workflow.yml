@@ -1,0 +1,161 @@
+id: infra-ops
+name: Infrastructure Operations Workflow
+version: 1
+description: |
+  Infrastructure execution pipeline. Planner decomposes tasks into operational steps.
+  Operator executes commands (SSH, Terraform, etc.). Verifier checks status.
+  Scribe documents changes.
+
+polling:
+  model: default
+  timeoutSeconds: 120
+
+agents:
+  - id: planner
+    name: Infra Planner
+    role: analysis
+    description: Decomposes infrastructure tasks into safe, verifiable steps.
+    workspace:
+      baseDir: agents/planner
+      files:
+        AGENTS.md: agents/planner/AGENTS.md
+        SOUL.md: agents/planner/SOUL.md
+        IDENTITY.md: agents/planner/IDENTITY.md
+
+  - id: operator
+    name: Infra Operator
+    role: coding
+    description: Executes infrastructure commands and scripts.
+    workspace:
+      baseDir: agents/operator
+      files:
+        AGENTS.md: agents/operator/AGENTS.md
+        SOUL.md: agents/operator/SOUL.md
+        IDENTITY.md: agents/operator/IDENTITY.md
+
+  - id: verifier
+    name: Infra Verifier
+    role: verification
+    description: Verifies infrastructure state changes.
+    workspace:
+      baseDir: agents/verifier
+      files:
+        AGENTS.md: agents/verifier/AGENTS.md
+        SOUL.md: agents/verifier/SOUL.md
+        IDENTITY.md: agents/verifier/IDENTITY.md
+
+  - id: scribe
+    name: Infra Scribe
+    role: coding
+    description: Documents changes in the knowledge base.
+    workspace:
+      baseDir: agents/scribe
+      files:
+        AGENTS.md: agents/scribe/AGENTS.md
+        SOUL.md: agents/scribe/SOUL.md
+        IDENTITY.md: agents/scribe/IDENTITY.md
+
+steps:
+  - id: plan
+    agent: planner
+    input: |
+      Plan the following infrastructure task.
+
+      TASK:
+      {{task}}
+
+      Instructions:
+      1. Analyze the request.
+      2. Check SSH access if remote execution is needed.
+      3. Decompose into logical steps (e.g., Install dependencies, Configure service, Restart).
+      4. Ensure each step is verifiable.
+
+      Reply with:
+      STATUS: done
+      PLAN: The detailed plan
+      STEPS_JSON: [ ... array of step objects ... ]
+    expects: "STATUS: done"
+    max_retries: 2
+    on_fail:
+      escalate_to: human
+
+  - id: execute
+    agent: operator
+    type: loop
+    loop:
+      over: stories
+      completion: all_done
+      fresh_session: true
+      verify_each: true
+      verify_step: verify
+    input: |
+      Execute the following infrastructure step.
+
+      TASK:
+      {{task}}
+
+      CURRENT STEP:
+      {{current_story}}
+
+      Reply with:
+      STATUS: done
+      RESULT: Command output or execution result
+    expects: "STATUS: done"
+    max_retries: 2
+    on_fail:
+      escalate_to: human
+
+  - id: verify
+    agent: verifier
+    input: |
+      Verify the operator's execution of this step.
+
+      TASK:
+      {{task}}
+
+      CURRENT STEP:
+      {{current_story}}
+
+      OPERATOR RESULT:
+      {{result}}
+
+      Instructions:
+      1. Check if the command succeeded.
+      2. Verify the state (e.g., service running, port open).
+      3. If failed, detailed reason.
+
+      Reply with:
+      STATUS: done
+      VERIFIED: Confirmation message
+      
+      Or if failed:
+      STATUS: retry
+      ISSUES: The failure reason
+    expects: "STATUS: done"
+    on_fail:
+      retry_step: execute
+      max_retries: 2
+      on_exhausted:
+        escalate_to: human
+
+  - id: document
+    agent: scribe
+    input: |
+      Document the completed infrastructure task.
+
+      TASK:
+      {{task}}
+
+      PLAN:
+      {{plan}}
+
+      Instructions:
+      1. Create a log entry in ai-task-memory.
+      2. Summarize what changed.
+
+      Reply with:
+      STATUS: done
+      DOC_PATH: Path to the documentation
+    expects: "STATUS: done"
+    on_fail:
+      escalate_to: human
