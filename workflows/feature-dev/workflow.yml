@@ -10,13 +10,14 @@ description: |
   Then integration/E2E testing, PR creation, and code review.
 
 polling:
-  model: default
+  model: ollama/glm-5:cloud
   timeoutSeconds: 120
 
 agents:
   - id: planner
     name: Planner
     role: analysis
+    model: ollama/glm-5:cloud
     description: Decomposes tasks into ordered user stories.
     workspace:
       baseDir: agents/planner
@@ -28,6 +29,7 @@ agents:
   - id: setup
     name: Setup
     role: coding
+    model: ollama/glm-5:cloud
     description: Prepares environment, creates branch, establishes baseline.
     workspace:
       baseDir: agents/setup
