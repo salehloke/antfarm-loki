@@ -1,0 +1,266 @@
+# QA Test Workflow — Generic, System-Agnostic
+id: qa
+name: QA Test Workflow
+version: 1
+description: |
+  Generic QA test generation and execution workflow.
+  Explorer discovers the target system from the task description.
+  Planner creates test areas as stories (system-agnostic).
+  Writer generates Playwright specs per area (loop).
+  Runner executes and captures results.
+  Reporter produces a coverage matrix and gap list.
+
+  Works for any target: backoffice, API, mobile, admin panel, etc.
+  Pass the target via --task at runtime.
+
+  Domain knowledge injected via {{memory}}:
+  - Regional User Module (RU-01 to RU-20)
+  - ETL Pipeline Correctness (ETL-01 to ETL-20)
+  - Edge Cases (8 patterns)
+  - Security Tests (5 OWASP categories)
+
+polling:
+  model: ollama/glm-5:cloud
+  timeoutSeconds: 1800
+
+agents:
+  - id: explorer
+    name: Explorer
+    role: analysis
+    description: Discovers the target system from the task, maps features and existing test gaps.
+    workspace:
+      baseDir: agents/explorer
+      files:
+        AGENTS.md: agents/explorer/AGENTS.md
+        SOUL.md: agents/explorer/SOUL.md
+        IDENTITY.md: agents/explorer/IDENTITY.md
+
+  - id: planner
+    name: QA Planner
+    role: analysis
+    description: Creates a prioritised QA test plan — decomposes into test areas as stories.
+    workspace:
+      baseDir: agents/planner
+      files:
+        AGENTS.md: agents/planner/AGENTS.md
+        SOUL.md: agents/planner/SOUL.md
+        IDENTITY.md: agents/planner/IDENTITY.md
+
+  - id: writer
+    name: Test Writer
+    role: coding
+    description: Writes Playwright specs per test area, reusing or creating POMs as needed.
+    workspace:
+      baseDir: agents/writer
+      files:
+        AGENTS.md: agents/writer/AGENTS.md
+        SOUL.md: agents/writer/SOUL.md
+        IDENTITY.md: agents/writer/IDENTITY.md
+
+  - id: runner
+    name: Test Runner
+    role: testing
+    description: Executes test suites, captures pass/fail results per area.
+    workspace:
+      baseDir: agents/runner
+      files:
+        AGENTS.md: agents/runner/AGENTS.md
+        SOUL.md: agents/runner/SOUL.md
+        IDENTITY.md: agents/runner/IDENTITY.md
+
+  - id: reporter
+    name: QA Reporter
+    role: analysis
+    description: Produces coverage matrix, gap list, and QA report markdown file.
+    workspace:
+      baseDir: agents/reporter
+      files:
+        AGENTS.md: agents/reporter/AGENTS.md
+        SOUL.md: agents/reporter/SOUL.md
+        IDENTITY.md: agents/reporter/IDENTITY.md
+
+steps:
+  - id: discover
+    agent: explorer
+    input: |
+      Explore the target system described in the task and map it for QA planning.
+
+      TASK:
+      {{task}}
+
+      REPO: {{repo}}
+
+      {{memory}}
+      <!-- Memory injects: qa-domain-knowledge.md (RU/ETL patterns, edge cases, security tests) -->
+
+      Instructions:
+      1. Read the task to understand WHAT is being tested (system, module, URL, file paths)
+      2. Explore relevant source directories (pages, components, routes, API handlers)
+      3. List all existing spec/test files and summarise what they already cover
+      4. Identify features, pages, or endpoints with NO test coverage (gaps)
+      5. Locate the Playwright config to extract baseURL and test directory
+      6. Note any existing Page Object Models (POMs) that can be reused
+
+      Reply with:
+      STATUS: done
+      REPO: /absolute/path/to/repo
+      TARGET_URL: <base URL of the system under test>
+      TARGET_DESCRIPTION: <what system/module is being tested>
+      EXISTING_COVERAGE: <summary — what is already covered>
+      COVERAGE_GAPS: <features/pages/endpoints with no tests>
+      POMS_AVAILABLE: <list of existing POM files>
+      TEST_OUTPUT_DIR: <where new specs should go, e.g. tests/qa/>
+    expects: "STATUS: done"
+    max_retries: 2
+    on_fail:
+      escalate_to: human
+
+  - id: plan
+    agent: planner
+    input: |
+      Create a comprehensive QA test plan for the target system.
+
+      TASK:
+      {{task}}
+
+      REPO: {{repo}}
+      TARGET_DESCRIPTION: {{target_description}}
+      TARGET_URL: {{target_url}}
+      EXISTING_COVERAGE: {{existing_coverage}}
+      COVERAGE_GAPS: {{coverage_gaps}}
+
+      {{memory}}
+      <!-- Memory injects: qa-domain-knowledge.md (RU-01 to RU-20, ETL-01 to ETL-20, edge cases, security patterns) -->
+
+      Instructions:
+      1. Read {{memory}} for known test patterns (Regional User, ETL, Edge Cases, Security)
+      2. Match patterns to target system (e.g., if task mentions "regional" → inject RU-01 to RU-20)
+      3. Derive test areas from the target system — do NOT use a fixed list
+      4. Prioritise gaps first, then supplement existing tests where coverage is thin
+      5. Define up to 12 test areas max (one area = one writer session)
+      6. For each area specify:
+         - Happy path cases
+         - Negative / validation cases
+         - Edge cases
+         - Priority: critical / high / medium / low
+      7. Output as STORIES_JSON — each story = one test area
+         Required fields per story: id, title, description, acceptance_criteria (array)
+
+      Reply with:
+      STATUS: done
+      STORIES_JSON: [ ... ]
+    expects: "STATUS: done"
+    max_retries: 2
+    on_fail:
+      escalate_to: human
+
+  - id: write
+    agent: writer
+    type: loop
+    loop:
+      over: stories
+      completion: all_done
+      fresh_session: true
+    input: |
+      Write Playwright tests for this test area.
+
+      TASK (overall):
+      {{task}}
+
+      REPO: {{repo}}
+      TARGET_URL: {{target_url}}
+      TARGET_DESCRIPTION: {{target_description}}
+      TEST_OUTPUT_DIR: {{test_output_dir}}
+      POMS_AVAILABLE: {{poms_available}}
+
+      CURRENT TEST AREA:
+      {{current_story}}
+
+      COMPLETED AREAS:
+      {{completed_stories}}
+
+      {{memory}}
+      <!-- Memory injects: qa-domain-knowledge.md (RU/ETL patterns, edge cases, security) -->
+
+      Instructions:
+      1. Read each listed POM before writing — reuse selectors, do NOT duplicate
+      2. Create a new POM only if the target page has no existing POM
+      3. Place spec at: {{test_output_dir}}/{{current_story_id}}.spec.ts
+      4. Each test must be fully independent (no shared state, no ordering dependencies)
+      5. Cover ALL case types from the story: happy path, negative/validation, edge cases
+      6. Use test.each() for data-driven validation tests
+      7. Add clear test.describe() grouping by case type
+      8. Commit: test(qa): {{current_story_id}} — {{current_story_title}}
+
+      Reply with:
+      STATUS: done
+      SPEC_FILE: <path to spec file>
+      TESTS_WRITTEN: <list of test names>
+      POMS_CREATED: <new POMs created, or "none">
+    expects: "STATUS: done"
+    max_retries: 2
+    on_fail:
+      escalate_to: human
+
+  - id: run
+    agent: runner
+    input: |
+      Execute all generated QA test suites.
+
+      REPO: {{repo}}
+      TARGET_URL: {{target_url}}
+      TEST_OUTPUT_DIR: {{test_output_dir}}
+
+      Instructions:
+      1. cd into the e2e-playwright app directory
+      2. Run: npx playwright test {{test_output_dir}} --reporter=json,list
+      3. Capture pass/fail count per spec file
+      4. Record individual failing test names and their error messages
+      5. Save raw JSON results to qa-results-{{run_id}}.json
+
+      Reply with:
+      STATUS: done
+      RESULTS: <pass/fail count per spec file>
+      FAILURES: <failing test names with error summary>
+      RESULTS_FILE: qa-results-{{run_id}}.json
+    expects: "STATUS: done"
+    max_retries: 2
+    on_fail:
+      escalate_to: human
+
+  - id: report
+    agent: reporter
+    input: |
+      Produce the QA coverage report.
+
+      TASK:
+      {{task}}
+
+      REPO: {{repo}}
+      TARGET_DESCRIPTION: {{target_description}}
+      RESULTS: {{results}}
+      FAILURES: {{failures}}
+      STORIES: {{stories}}
+      COVERAGE_GAPS: {{coverage_gaps}}
+
+      {{memory}}
+      <!-- Memory injects: qa-domain-knowledge.md (RU/ETL patterns, edge cases, security) -->
+
+      Instructions:
+      1. Build a coverage matrix: test area → passed / failed / skipped
+      2. Calculate overall coverage %
+      3. Root-cause summary for each failure
+      4. List features still NOT covered (remaining gaps)
+      5. Recommend what to tackle in the next QA run
+      6. Write the full report to qa-report-{{run_id}}.md in the repo root
+
+      Reply with:
+      STATUS: done
+      COVERAGE: <xx%>
+      PASSED: <n>
+      FAILED: <n>
+      REPORT_FILE: qa-report-{{run_id}}.md
+    expects: "STATUS: done"
+    max_retries: 2
+    on_fail:
+      escalate_to: human

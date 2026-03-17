@@ -1,0 +1,358 @@
+# QA Test Workflow — Enhanced with Task Breakdown Enforcement
+id: qa
+name: QA Test Workflow
+version: 2
+description: |
+  Enhanced QA workflow with task breakdown enforcement and live discovery.
+  
+  Key improvements:
+  - Tasks broken into ≤10-minute subtasks
+  - Progressive output (survives timeouts)
+  - Live Playwright discovery (optional)
+  - Static + live hybrid approach
+
+  Pipeline:
+  1. Static exploration (tests, pages, components, API) — 4 subtasks
+  2. Live discovery (Playwright browser) — optional
+  3. Consolidation (merge findings)
+  4. Planning (test areas as stories)
+  5. Writing (Playwright specs per area)
+  6. Running (execute tests)
+  7. Reporting (coverage matrix)
+
+  Works for any target: backoffice, API, mobile, admin panel, etc.
+  Pass the target via --task at runtime.
+
+  Domain knowledge injected via {{memory}}:
+  - Regional User Module (RU-01 to RU-20)
+  - ETL Pipeline Correctness (ETL-01 to ETL-20)
+  - Edge Cases (8 patterns)
+  - Security Tests (5 OWASP categories)
+
+polling:
+  model: ollama/glm-5:cloud
+  timeoutSeconds: 1800  # 30 minutes
+
+agents:
+  - id: explorer
+    name: Explorer
+    role: analysis
+    maxDuration: 600  # 10 minutes per subtask
+    description: Discovers target system via static + live exploration.
+    workspace:
+      baseDir: agents/explorer
+      files:
+        AGENTS.md: agents/explorer/AGENTS.md
+        SOUL.md: agents/explorer/SOUL.md
+        IDENTITY.md: agents/explorer/IDENTITY.md
+
+  - id: planner
+    name: QA Planner
+    role: analysis
+    maxDuration: 600
+    description: Creates test plan — decomposes into ≤12 test areas (stories).
+    workspace:
+      baseDir: agents/planner
+      files:
+        AGENTS.md: agents/planner/AGENTS.md
+        SOUL.md: agents/planner/SOUL.md
+        IDENTITY.md: agents/planner/IDENTITY.md
+
+  - id: writer
+    name: Test Writer
+    role: coding
+    maxDuration: 900
+    description: Writes Playwright specs per test area.
+    workspace:
+      baseDir: agents/writer
+      files:
+        AGENTS.md: agents/writer/AGENTS.md
+        SOUL.md: agents/writer/SOUL.md
+        IDENTITY.md: agents/writer/IDENTITY.md
+
+  - id: runner
+    name: Test Runner
+    role: testing
+    maxDuration: 1800
+    description: Executes test suites.
+    workspace:
+      baseDir: agents/runner
+      files:
+        AGENTS.md: agents/runner/AGENTS.md
+        SOUL.md: agents/runner/SOUL.md
+        IDENTITY.md: agents/runner/IDENTITY.md
+
+  - id: reporter
+    name: QA Reporter
+    role: analysis
+    maxDuration: 600
+    description: Produces coverage matrix and report.
+    workspace:
+      baseDir: agents/reporter
+      files:
+        AGENTS.md: agents/reporter/AGENTS.md
+        SOUL.md: agents/reporter/SOUL.md
+        IDENTITY.md: agents/reporter/IDENTITY.md
+
+steps:
+  # Phase 1: Static Exploration (split into 4 subtasks)
+  - id: explore_tests
+    agent: explorer
+    maxDuration: 300  # 5 minutes
+    input: |
+      Explore ONLY test directory structure.
+      
+      TASK: {{task}}
+      REPO: {{repo}}
+      
+      Instructions:
+      1. Find all *.spec.ts files in tests/ and src/specs/
+      2. Count total test files
+      3. List test categories (e2e, api, unit)
+      4. Write findings to /tmp/antfarm-explorer-tests.md
+      
+      Output format:
+      ## Test Exploration
+      - Total spec files: N
+      - Test categories: [...]
+      - Files: [list]
+      
+      Write "DONE: Test exploration complete" when finished.
+    outputFile: /tmp/antfarm-explorer-tests.md
+
+  - id: explore_pages
+    agent: explorer
+    maxDuration: 600  # 10 minutes
+    input: |
+      Explore ONLY src/pages directory (backoffice pages).
+      
+      Instructions:
+      1. List all page components
+      2. Map routes to pages
+      3. Identify page features (forms, tables, buttons)
+      4. Write to /tmp/antfarm-explorer-pages.md
+      
+      Output format:
+      ## Pages Exploration
+      - Routes: [...]
+      - Page components: [...]
+      - Features: [...]
+      
+      Write "DONE: Pages exploration complete" when finished.
+    outputFile: /tmp/antfarm-explorer-pages.md
+
+  - id: explore_components
+    agent: explorer
+    maxDuration: 600  # 10 minutes
+    input: |
+      Explore ONLY src/components directory.
+      
+      Instructions:
+      1. List reusable components
+      2. Identify Page Object Models (POMs)
+      3. Note shared utilities
+      4. Write to /tmp/antfarm-explorer-components.md
+      
+      Output format:
+      ## Components Exploration
+      - Reusable components: [...]
+      - POMs: [...]
+      - Utilities: [...]
+      
+      Write "DONE: Components exploration complete" when finished.
+    outputFile: /tmp/antfarm-explorer-components.md
+    expects: "STATUS: done"
+
+  - id: explore_api
+    agent: explorer
+    maxDuration: 600  # 10 minutes
+    input: |
+      Explore ONLY API routes and endpoints.
+      
+      Instructions:
+      1. Find API route definitions
+      2. List endpoints (GET, POST, PUT, DELETE)
+      3. Note request/response schemas
+      4. Write to /tmp/antfarm-explorer-api.md
+      
+      Output format:
+      ## API Exploration
+      - Endpoints: [...]
+      - Methods: [...]
+      - Schemas: [...]
+      
+      Write "DONE: API exploration complete" when finished.
+    outputFile: /tmp/antfarm-explorer-api.md
+
+  # Phase 2: Live Discovery (optional, uses Playwright browser)
+  - id: live_discovery
+    agent: explorer
+    maxDuration: 900  # 15 minutes
+    toolProfile: browser
+    input: |
+      Use Playwright to explore the LIVE backoffice system.
+      
+      TASK: {{task}}
+      TARGET_URL: {{target_url}}
+      
+      Instructions:
+      1. Navigate to TARGET_URL
+      2. Click through main menu items
+      3. Screenshot each major page
+      4. Extract form fields, buttons, tables
+      5. Note navigation structure
+      6. Write to /tmp/antfarm-live-discovery.md
+      
+      Use Playwright browser tool for navigation and screenshots.
+      
+      Output format:
+      ## Live Discovery
+      - Base URL: [...]
+      - Menu items: [...]
+      - Pages visited: [...]
+      - Forms found: [...]
+      - Selectors: [...]
+      
+      Write "DONE: Live discovery complete" when finished.
+    outputFile: /tmp/antfarm-live-discovery.md
+    optional: true  # Skip if backoffice unavailable
+
+  # Phase 3: Consolidation
+  - id: consolidate_findings
+    agent: planner
+    maxDuration: 300  # 5 minutes
+    input: |
+      Merge all exploration findings into unified output.
+      
+      Read files:
+      - /tmp/antfarm-explorer-tests.md
+      - /tmp/antfarm-explorer-pages.md
+      - /tmp/antfarm-explorer-components.md
+      - /tmp/antfarm-explorer-api.md
+      - /tmp/antfarm-live-discovery.md (if exists)
+      
+      Create consolidated summary:
+      1. List all test files found
+      2. List all pages/components
+      3. List all API endpoints
+      4. List live UI elements (if live discovery ran)
+      5. Identify coverage gaps
+      
+      Write to /tmp/antfarm-consolidated.md
+      
+      Output format:
+      ## Consolidated Findings
+      ### Tests
+      ### Pages
+      ### Components
+      ### API
+      ### Live UI
+      ### Coverage Gaps
+      
+      Write "DONE: Consolidation complete" when finished.
+    outputFile: /tmp/antfarm-consolidated.md
+
+  # Phase 4: Planning
+  - id: plan
+    agent: planner
+    maxDuration: 600  # 10 minutes
+    input: |
+      Create a comprehensive QA test plan from consolidated findings.
+      
+      Read: /tmp/antfarm-consolidated.md
+      
+      {{memory}}
+      <!-- Memory injects: qa-domain-knowledge.md -->
+      
+      Instructions:
+      1. Read consolidated findings
+      2. Match patterns from memory (RU/ETL/Edge/Security)
+      3. Create up to 12 test areas (stories)
+      4. Each story = ONE focused test area (≤10 min to implement)
+      5. Prioritize: gaps first, then thin coverage, then existing
+      
+      For each story:
+      - id: USD-001, US-002, etc.
+      - title: Short, focused (e.g., "Test user creation happy path")
+      - description: What to test
+      - acceptance_criteria: [array of verifiable criteria]
+      - priority: critical/high/medium/low
+      
+      Rule: If any story could take >10 min, SPLIT IT.
+      
+      Reply with:
+      STATUS: done
+      STORIES_JSON: [ ... ]
+    expects: "STATUS: done"
+
+  # Phase 5-7: Original workflow continues
+  - id: write
+    agent: writer
+    type: loop
+    loop:
+      over: stories
+      completion: all_done
+      freshSession: true
+    input: |
+      Write Playwright test spec for ONE story.
+      
+      STORY: {{current_story}}
+      REPO: {{repo}}
+      
+      Instructions:
+      1. Read existing POMs
+      2. Write test spec for this story only
+      3. Follow project conventions
+      4. Place in TEST_OUTPUT_DIR
+      5. Run typecheck
+      
+      Reply with:
+      STATUS: done
+      SPEC_FILE: path to created spec
+      TESTS: test count
+
+  - id: run
+    agent: runner
+    input: |
+      Execute all written tests.
+      
+      Instructions:
+      1. Run Playwright test suite
+      2. Capture results per test
+      3. Note failures with error messages
+      
+      Reply with:
+      STATUS: done
+      PASSED: N tests
+      FAILED: N tests
+      FAILURES: [...]
+
+  - id: report
+    agent: reporter
+    input: |
+      Generate QA coverage report.
+      
+      Instructions:
+      1. Create coverage matrix (feature × test status)
+      2. List gaps (features with no tests)
+      3. Note flaky tests
+      4. Write markdown report
+      
+      Reply with:
+      STATUS: done
+      REPORT: path to report file
+      COVERAGE: N% covered
+
+  - id: learn
+    agent: distiller
+    input: |
+      Extract lessons learned for future runs.
+      
+      Instructions:
+      1. What worked well?
+      2. What failed?
+      3. What to improve next time?
+      
+      Reply with:
+      STATUS: done
+      LESSONS: [...]
