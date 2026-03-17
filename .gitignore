@@ -6,3 +6,10 @@ dist/
 *.sqlite3
 progress.txt
 progress*.txt
+
+# macOS resource forks
+._*
+.DS_Store
+
+# Workflow archives
+workflows/*.tar.gz
